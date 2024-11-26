@@ -8,11 +8,12 @@ public class Main {
     public static void main(String[] args) throws IOException {
         
         ServerSocket ss = new ServerSocket(3000);
+        
 
         while(true){
-
-            Server server = new Server(ss);
-            server.start();
+            Socket s = ss.accept();
+            GestioneClient gc = new GestioneClient(s);
+            gc.start();
         }
     }
 }

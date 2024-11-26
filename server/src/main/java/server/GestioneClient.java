@@ -9,81 +9,120 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 
-public class GestioneClient extends Thread{
-    
+public class GestioneClient extends Thread {
+
     public Socket s;
     public BufferedReader in;
     public BufferedWriter out;
     public String username;
-    public List<GestioneClient> gc = new ArrayList<>();
+    public static List<GestioneClient> gc = new ArrayList<>();
 
-    public GestioneClient(Socket s){
-        try{
+    public GestioneClient(Socket s) {
+        try {
+            this.s = s;
+            in = new BufferedReader(new InputStreamReader(s.getInputStream()));
+            out = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()));
 
-        this.s=s;
-        in = new BufferedReader(new InputStreamReader(s.getInputStream()));
-        out = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()));
-        username = in.readLine();
-        gc.add(this);
-        messageBrodcast("SERVER: " + username + "si e' unito alla chat");
-
-        }catch(Exception e){
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
-
 
     @Override
     public void run() {
         try {
-            //menu
-            out.write("Digita '1' per andare in chat PRIVATA, '2' per quella PUBBLICA e '3' per DISCONNETTERTI");
-            out.newLine();
-            out.flush();
-
-            String scelta = in.readLine();
-
-            switch (scelta) {
-                case "1":
-                    
-                    break;
+            username = in.readLine();
+            synchronized (gc) {
+                gc.add(this); // Aggiunge il client alla lista condivisa
+            }
+           
+            // menu
+            while (true) {
                 
-                case "2":
-                //menu pubblico
+            
+                String scelta = in.readLine();
+                System.out.println(scelta);
+
+                switch (scelta) {
+                    case "1":
+                    out.write("PRIV");
+                    out.newLine();
+                    out.flush();
+                
+                    String dst = in.readLine(); // Leggi l'username del destinatario della chat privata
+                
+                    // Trova il client destinatario
+                    GestioneClient destinatario = null;
+                    for (GestioneClient c : gc) {
+                        if (c.username.equals(dst)) {
+                            destinatario = c;
+                            break;
+                        }
+                    }
+                
+                    if (destinatario != null) {
+                        out.write("ok");
+                        out.newLine();
+                        out.flush();
+                
+                        // Ora inizia la chat privata
+                        boolean connessionePriv = true;
+                        while (connessionePriv) {
+                            String messaggio = in.readLine(); // Leggi i messaggi dal client
+                            if (messaggio.equals("/QUIT")) {
+                                connessionePriv = false;
+                                destinatario.invioMessaggio("SERVER: " + username + " ha lasciato la chat privata");
+                                this.invioMessaggio("/QUIT"); // Comunica al client che la chat è finita
+                                break;
+                            } else {
+                                // Invia il messaggio al destinatario della chat privata
+                                destinatario.invioMessaggio(username + "(Privato): " + messaggio);
+                            }
+                        }
+                    } else {
+                        out.write("Utente non trovato!");
+                        out.newLine();
+                        out.flush();
+                    }
+                        break;
+
+                    case "2":
+                    // menu pubblico
+                    messageBrodcast("SERVER: " + username + " si e' unito alla chat");
                     out.write("PUBBL");
                     out.newLine();
                     out.flush();
-
-                    String messaggio;
-                    while((messaggio = in.readLine()) != null){
-                        if(messaggio.equals("/QUIT")){
-                            break;
-                        }else{
-                            this.messageBrodcast(messaggio);
+                    boolean connessione = true;
+                    while (connessione) {
+                            String messaggio = in.readLine();
+                            if (messaggio.equals("/QUIT")) {
+                                connessione = false;
+                                messageBrodcast("SERVER: " + username + "  ha abbandonato la chat");
+                                break;
+                            } else {
+                                System.out.println(messaggio);
+                                this.messageBrodcast(username+": "+messaggio);
+                            }
                         }
-                        
-                    }
-
-                    break;
-                case "3":
-
-                    break;
+                        break;
+                    case "3":
+                        System.out.println(username + " si è disconesso");
+                        break;
+                }
             }
 
-
-
         } catch (IOException e) {
 
             e.printStackTrace();
 
         }
     }
+    public void invioMessaggio(String mess) {
 
-    public void invioMessaggio(String mess){
-        
         try {
-
             out.write(mess);
+            out.newLine();
+            out.flush();
 
         } catch (IOException e) {
 
@@ -92,12 +131,15 @@ public class GestioneClient extends Thread{
         }
     }
 
-    public void messageBrodcast(String messaggio){
+    public void messageBrodcast(String messaggio) {
 
-        for(GestioneClient i:gc){
-
-            invioMessaggio(messaggio);
-
+        synchronized (gc) {
+            for (GestioneClient client : gc) {
+                if (client != this) { // Non invia il messaggio a sé stesso
+                    client.invioMessaggio( messaggio);
+                }
+            }
         }
+
     }
 }

@@ -16,6 +16,8 @@ public class GestioneClient extends Thread {
     public BufferedWriter out;
     public String username;
     public static List<GestioneClient> gc = new ArrayList<>();
+    private boolean inChatPrivata = false; // Indica se il client è in chat privata
+    private GestioneClient destinatarioPrivato = null; // Il destinatario della chat privata
 
     public GestioneClient(Socket s) {
         try {
@@ -38,12 +40,12 @@ public class GestioneClient extends Thread {
            
             // menu
             while (true) {
-                
-            
                 String scelta = in.readLine();
-                System.out.println(scelta);
+                System.out.println(username+" ha scelto:"+scelta); 
+                
 
                 switch (scelta) {
+                    //GESTIONE CHAT PRIVATA
                     case "1":
                     out.write("PRIV");
                     out.newLine();
@@ -53,10 +55,12 @@ public class GestioneClient extends Thread {
                 
                     // Trova il client destinatario
                     GestioneClient destinatario = null;
-                    for (GestioneClient c : gc) {
-                        if (c.username.equals(dst)) {
-                            destinatario = c;
-                            break;
+                    synchronized (gc) {
+                        for (GestioneClient c : gc) {
+                            if (c.username.equals(dst)) {
+                                destinatario = c;
+                                break;
+                            }
                         }
                     }
                 
@@ -65,18 +69,30 @@ public class GestioneClient extends Thread {
                         out.newLine();
                         out.flush();
                 
-                        // Ora inizia la chat privata
+                        // Imposta lo stato per la chat privata
+                        this.inChatPrivata = true;
+                        this.destinatarioPrivato = destinatario;
+                
+                        // Notifica l'inizio della chat privata
+                        destinatario.invioMessaggio("SERVER: " + username + " ha avviato una chat privata con te.");
+                        
+                        //Gestisce i messaggi + QUIT
                         boolean connessionePriv = true;
                         while (connessionePriv) {
-                            String messaggio = in.readLine(); // Leggi i messaggi dal client
+                            String messaggio = in.readLine();
                             if (messaggio.equals("/QUIT")) {
-                                connessionePriv = false;
-                                destinatario.invioMessaggio("SERVER: " + username + " ha lasciato la chat privata");
+                                connessionePriv = false; 
+                                this.inChatPrivata = false;
+                                this.destinatarioPrivato = null;
+                            
+                                if (destinatario != null) {
+                                    destinatario.inChatPrivata = false;
+                                    destinatario.destinatarioPrivato = null;
+                                    destinatario.invioMessaggio("SERVER: " + username + " ha lasciato la chat privata.");
+                                }
                                 this.invioMessaggio("/QUIT"); // Comunica al client che la chat è finita
-                                break;
                             } else {
-                                // Invia il messaggio al destinatario della chat privata
-                                destinatario.invioMessaggio(username + "(Privato): " + messaggio);
+                                destinatario.invioMessaggio(username + " (Privato): " + messaggio);
                             }
                         }
                     } else {
@@ -93,18 +109,21 @@ public class GestioneClient extends Thread {
                     out.newLine();
                     out.flush();
                     boolean connessione = true;
+                    //Gestione Messaggio 
                     while (connessione) {
                             String messaggio = in.readLine();
                             if (messaggio.equals("/QUIT")) {
                                 connessione = false;
-                                messageBrodcast("SERVER: " + username + "  ha abbandonato la chat");
-                                break;
+                                messageBrodcast("SERVER: " + username + " ha abbandonato la chat.");
+                                this.invioMessaggio("Digita '1' per andare in chat PRIVATA, '2' per quella PUBBLICA e '3' per DISCONNETTERTI"); // Notifica il client
+                                break; // Torna al menu principale
                             } else {
                                 System.out.println(messaggio);
                                 this.messageBrodcast(username+": "+messaggio);
                             }
                         }
                         break;
+                        //Disconnessioe client 
                     case "3":
                         System.out.println(username + " si è disconesso");
                         break;
@@ -117,9 +136,9 @@ public class GestioneClient extends Thread {
 
         }
     }
-    public void invioMessaggio(String mess) {
-
+    public synchronized void invioMessaggio(String mess) {
         try {
+        
             out.write(mess);
             out.newLine();
             out.flush();
@@ -132,14 +151,12 @@ public class GestioneClient extends Thread {
     }
 
     public void messageBrodcast(String messaggio) {
-
         synchronized (gc) {
             for (GestioneClient client : gc) {
-                if (client != this) { // Non invia il messaggio a sé stesso
-                    client.invioMessaggio( messaggio);
+                if (!client.inChatPrivata && client != this) { // Invia solo ai client non in chat privata
+                    client.invioMessaggio(messaggio);
                 }
             }
         }
-
     }
 }
